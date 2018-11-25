@@ -1,3 +1,227 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a44312a06f9232335e307fb26d732d3ea78235524b08a942ff58c3788b025ba0
-size 6246
+---
+title: "Loanbuilder EDA"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+author: "Drey Upsher-Obear"
+date: "November 15, 2018"
+output: html_document
+---
+
+## Setup & Data 
+
+These packages will be required for this EDA. 
+
+```{r packages}
+library(devtools)
+library(tidyverse)
+library(RCurl)
+library(statsr)
+library(rmarkdown)
+library(DataExplorer)
+```
+
+Now load the data from the .csv file. 
+
+```{r data}
+loans <- read.csv("loan.csv", header = TRUE, sep = ",")
+```
+
+Optional: load .csv from web directly. 
+
+```{r data_2}
+download <- getURL("https://www.kaggle.com/wendykan/lending-club-loan-data")
+
+data <- read.csv(text = download)
+```
+
+
+Now we can start to clean and organize our data. 
+
+First, lets check our variables for this question (int_rate, funded_amnt) to see if it is a normal distribution. 
+```{r int_rate histogram}
+loans %>%
+  ggplot(aes(x = int_rate)) + geom_histogram(binwidth = .75)
+```
+
+Right off the bat, the interest rates seem to be fairly normal, with a notion of bimodal distribution with a right tail. It might be helpful to see some basic summary statistics for this data. 
+
+# Summary Statistics 
+
+```{r summary-stats}
+loans %>%
+  summarise(m = mean(int_rate), med = median(int_rate),
+            sigma = sd(int_rate), pop_iqr = IQR(int_rate),
+            pop_max = max(int_rate), pop_min = min(int_rate),
+            pop_q1 = quantile(int_rate, .25), # 25% percentile
+            pop_q3 = quantile(int_rate, .75)) # 75% percentile 
+```
+
+Lets take some samples and see how they compare to the population. Our next step is to create a sampling distribution to find a point estimate. Creating a sample distribution also helps us determine variability when we are estimating the population mean.
+
+```{r sampling}
+sample_means.001 <- loans %>%
+  rep_sample_n(size = 8000, reps = 1000, replace = TRUE) %>%
+  summarise(int_rt = mean(int_rate), loan_amt = mean(loan_amnt), inst_amt = mean(installment))
+
+ggplot(data = sample_means.001, aes(x = int_rt)) + geom_histogram(binwidth = .01)
+
+```
+
+This is looking good. The point estimate based on this sample distribution looks very close to the actual mean of interest rates. Based on the graph, I would estimate the mean (if I didnt already know) to be about 13.25 (pop avg: 13.246). 
+
+The reason we use the sampling distribution is because it is an unbiased, causing it to show the true mean. Ideally we should complete our point estimate inference by calculating the confidence level. 
+
+sqrt(4.38^2) / 1000 = .14 (this is the standard error) >
+95% CI [12.96, 13.51], this translates to 'we are 95% confident the population mean is between 12.96 and 13.51. 
+
+What I have gathered from this is the following;
+
+1. While sample means only provide an estimate, the sizes of these samples are usually easier to work with than the population as a whole.
+
+2. Point estimation of the mean becomes more accurate as the # of observations in the sample increases.
+
+
+## Question 1
+
+Can we associate the amount of the loan with its given grade? Can we deem this causation or correlation? 
+
+First lets clean and organize our data. Lets calculate the basic stats summary, and lets put in a 95% confidence interval for graphing purposes. 
+
+```{r pop-grade-avg}
+amgr <- loans %>%
+  group_by(grade) %>%
+  summarise(m = mean(funded_amnt), s_d = sd(funded_amnt),
+            ymax = max(funded_amnt), ymin = min(funded_amnt),
+            y_IQR = IQR(funded_amnt), n.fund = n()) %>%
+  mutate(se.fund = s_d / sqrt(n.fund),
+         lower.ci = m - qt(1 - (.05 / 2), n.fund - 1) * se.fund,
+         upper.ci = m + qt(1 - (.05 / 2), n.fund -1) * se.fund)
+```
+
+We will plot this with an error bar, in order to utilize the previous calculation of the confidence interval. 
+
+```{r plot-grade-avg}
+amgr %>%
+  ggplot(aes(x = grade, y = m)) + geom_errorbar(aes(ymin = m - se.fund, ymax = m + se.fund), width = 1) +
+  geom_line() +
+  geom_point()+
+  xlab("Grade of Loan") +
+  ylab("Average Loan amount")
+```
+
+An interesting observation arises; as the loan amount increases, the grade seems to diminish. In other words, the larger the loan, the worse the grade (or so it appears). 
+
+It it also interesting to note that the standard error increases as the grade decreases. 
+
+Now I will try the same process except this time I will be sampling, instead of drawing straight from the population. This should increase speed and decrease drag. 
+
+```{r sampling-grade-avg}
+amgr_v2 <- loans %>%
+  rep_sample_n(size = 88737, reps = 10, replace = TRUE) %>%
+  group_by(grade) %>%
+  summarise(m = mean(funded_amnt), s_d = sd(funded_amnt), ymax = max(funded_amnt),
+            ymin = min(funded_amnt), y_IQR = IQR(funded_amnt), n.fund = n()) %>%
+  mutate(se.fund = s_d / sqrt(n.fund),
+         lower.ci = m - qt(1 - (.05 / 2), n.fund - 1) * se.fund,
+         upper.ci = m + qt(1 - (.05 / 2), n.fund -1) * se.fund) 
+```
+
+Lets do the same graph and see if its similar. 
+
+```{r plot-sampling-grade-avg}
+amgr_v2 %>%
+  ggplot(aes(x = grade, y = m)) + geom_errorbar(aes(ymin = m - se.fund, ymax = m + se.fund), width = 1) +
+  geom_line() +
+  geom_point()+
+  xlab("Grade of Loan") +
+  ylab("Average Loan amount")
+```
+
+Lets try to compare them. First we need to add a dummy variable to specify the group (population, sample). Combine both datasets into one "stepchild" data frame, in order to facet by group. 
+
+```{r dummy-variable}
+amgr <- amgr %>%
+  mutate(group = if_else(m > 0, "Population", "N/A"))
+
+amgr_v2 <- amgr_v2 %>%
+  mutate(group = if_else(m > 0, "Sample", "N/A"))
+
+stepchild <- bind_rows(amgr, amgr_v2)
+```
+
+Now lets plot these on separate graphs. 
+
+```{r combine-sets}
+stepchild %>%
+  ggplot(aes(x = grade, y = m, fill = group)) +
+  geom_boxplot() +
+  ylab("Mean Loan Amount") +
+  xlab("Grade of Loan")
+```
+
+They are virtually the same, it seems there is more variability in the population data than in the sample data which checks out (this is the goal of sampling). 
+
+## Loan Amount Distribution
+
+# What does the distribution look like for the amount of the loan? This might be helpful in gathering an understanding of Lending Clubs portfolio. 
+
+
+```{r}
+  Desc(loans$loan_amnt, main = "Loan Amount Dist.", plotit = TRUE)
+```
+
+This shows a solid distribution among the portfolio. Because the distribution is focused around the ~ 10,000 dollar mark, it would be safe to assume that it would be more ideal to lose many small loans than a couple big ones. Depending on risk, this would inherently lower the overal volatility of the portfolio. 
+
+## Amount and status distribution
+
+Regarding risk, we should also look at the amount distribution by status of the loan. 
+
+```{r}
+loans %>%
+  ggplot(aes(loan_status, loan_amnt)) + 
+  geom_boxplot(aes(fill = loan_status)) +
+  theme(axis.text.x = element_blank()) +
+  xlab("Loan Status") +
+  ylab("Loan Amount ($)") +
+  ggtitle("Amounts ~ Status")
+```
+
+This can be interprited as higher loan amounts generally have a 'worse' status, than those of lower amounts. 
+
+## Suggested correlations
+
+Here we can easily see possible correlations using the DataExplorer package, and the plot_correlation function.
+
+```{r}
+clean <- loans %>%
+  select(c(loan_amnt, int_rate, installment, grade, total_bal_il))
+
+plot_correlation(clean, maxcat = 10)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
