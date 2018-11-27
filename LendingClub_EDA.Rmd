@@ -196,6 +196,8 @@ This can be interprited as higher loan amounts generally have a 'worse' status, 
 
 Here we can easily see possible correlations using the DataExplorer package, and the plot_correlation function. I only picked variables that I was specifically interested in during this EDA. 
 
+## Need to fix grade sub_cat. 
+
 ```{r}
 clean <- loans %>%
   select(c(loan_amnt, int_rate, installment, as.factor(grade), total_bal_il))
