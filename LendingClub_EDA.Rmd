@@ -192,6 +192,19 @@ loans %>%
 
 This can be interprited as higher loan amounts generally have a 'worse' status, than those of lower amounts. 
 
+Lets see the same graph, but with interest rates instead of the loan amount. 
+
+```{r}
+loans %>%
+  ggplot(aes(loan_status, int_rate)) + 
+  geom_boxplot(aes(fill = loan_status)) +
+  theme(axis.text.x = element_blank()) +
+  xlab("Loan Status") +
+  ylab("Interest Rate (%)") +
+  ggtitle("Amounts ~ Rate")
+```
+Interesting, almost a similar distribution to the amounts ~ status plot. I would assume this is due to the increased risk of the loan depending on the status, as well as the amount (IE, the other one). 
+
 ## Suggested correlations
 
 Here we can easily see possible correlations using the DataExplorer package, and the plot_correlation function. I only picked variables that I was specifically interested in during this EDA. 
